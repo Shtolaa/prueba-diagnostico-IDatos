@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  miner:
+    build: ./miner
+    container_name: data-miner
+    volumes:
+      - pipeline-data:/app/data
+    env_file:
+      - ./miner/.env
+    restart: unless-stopped
+
+  visualizer:
+    build: ./visualizer
+    container_name: data-visualizer
+    ports:
+      - "8080:8080"
+    volumes:
+      - pipeline-data:/app/data
+    depends_on:
+      - miner
+    restart: unless-stopped
+
+volumes:
+  pipeline-data:
+    name: pipeline_shared_volume

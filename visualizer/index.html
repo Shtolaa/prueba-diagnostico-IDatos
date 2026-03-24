@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code Miner Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        // Paleta personalizada: Fondo blanco, texto azul tenue
+                        'app-bg': '#ffffff',
+                        'app-text': '#4f6c8c', // Azul tenue/grisáceo para el texto general
+                        'app-title': '#2c3e50', // Azul un poco más fuerte para títulos
+                        'app-card': '#f8fafc', // Gris muy claro para tarjetas
+                        'app-border': '#e2e8f0',
+                        
+                        // Colores Pastel para acentos y gráficos
+                        'pastel-blue': '#a0c4ff',
+                        'pastel-green': '#b9fbc0',
+                        'pastel-yellow': '#fdffb6',
+                        'pastel-red': '#ffadad',
+                        'pastel-purple': '#d9b3ff'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Sobreescribir color de texto global por defecto */
+        body { color: #4f6c8c; } 
+    </style>
+</head>
+<body class="bg-app-bg min-h-screen p-6 font-sans">
+    <div class="max-w-6xl mx-auto">
+        <header class="mb-8 border-b border-app-border pb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+                <h1 class="text-3xl font-semibold text-app-title">
+                    GitHub AST Data Miner
+                </h1>
+                <p class="text-sm mt-1 flex items-center gap-2 text-app-text/80">
+                    <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-pastel-green animate-pulse border border-green-300"></span>
+                    <span id="status-text">Monitoreo de flujo de datos en tiempo real</span>
+                </p>
+            </div>
+            
+            <div class="flex items-center gap-4 bg-app-card p-2 rounded-lg border border-app-border shadow-sm">
+                <label for="topN" class="text-sm font-medium ml-2">Mostrar Top N:</label>
+                <input type="number" id="topN" value="15" min="5" max="50" 
+                       class="w-16 bg-white border border-app-border rounded px-2 py-1 text-center focus:outline-none focus:ring-1 focus:ring-pastel-blue text-app-title">
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-app-card border border-app-border p-5 rounded-xl shadow-sm flex flex-col items-center justify-center">
+                <span class="text-xs font-semibold uppercase tracking-wider text-app-text/70">Repositorios</span>
+                <span id="kpi-repos" class="text-3xl font-bold mt-1 text-app-title">0</span>
+                <div class="w-full h-1 bg-pastel-blue rounded-full mt-2 opacity-60"></div>
+            </div>
+            <div class="bg-app-card border border-app-border p-5 rounded-xl shadow-sm flex flex-col items-center justify-center">
+                <span class="text-xs font-semibold uppercase tracking-wider text-app-text/70">Archivos</span>
+                <span id="kpi-files" class="text-3xl font-bold mt-1 text-app-title">0</span>
+                <div class="w-full h-1 bg-pastel-green rounded-full mt-2 opacity-60"></div>
+            </div>
+            <div class="bg-app-card border border-app-border p-5 rounded-xl shadow-sm flex flex-col items-center justify-center">
+                <span class="text-xs font-semibold uppercase tracking-wider text-app-text/70">Palabras</span>
+                <span id="kpi-words" class="text-3xl font-bold mt-1 text-app-title">0</span>
+                <div class="w-full h-1 bg-pastel-purple rounded-full mt-2 opacity-60"></div>
+            </div>
+        </div>
+
+        <div class="flex gap-2 mb-6 p-1 bg-app-card rounded-full border border-app-border w-fit shadow-inner">
+            <button onclick="setLang('all')" id="btn-all" class="filter-btn px-6 py-2 rounded-full text-sm font-medium transition-all duration-300">Todos</button>
+            <button onclick="setLang('python')" id="btn-python" class="filter-btn px-6 py-2 rounded-full text-sm font-medium transition-all duration-300 hover:bg-white/50">Python</button>
+            <button onclick="setLang('java')" id="btn-java" class="filter-btn px-6 py-2 rounded-full text-sm font-medium transition-all duration-300 hover:bg-white/50">Java</button>
+        </div>
+
+        <div class="bg-white rounded-xl p-4 md:p-6 border border-app-border shadow-sm">
+            <div class="relative h-[55vh] w-full">
+                <canvas id="myChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ctx = document.getElementById('myChart').getContext('2d');
+        const topNInput = document.getElementById('topN');
+        
+        let fullData = { stats: { totalWords: 0, reposProcessed: 0, filesProcessed: 0 }, all: [], python: [], java: [] };
+        let currentLang = 'all';
+
+        // Configuración de colores Pastel para el gráfico
+        const colors = {
+            all: { border: '#7fb3ff', bg: 'rgba(160, 196, 255, 0.5)' },    // Pastel Blue suave
+            python: { border: '#f0e68c', bg: 'rgba(253, 255, 182, 0.6)' }, // Pastel Yellow suave
+            java: { border: '#ff9999', bg: 'rgba(255, 173, 173, 0.5)' }   // Pastel Red suave
+        };
+
+        // Configuración global de Chart.js para fondo claro
+        Chart.defaults.color = '#4f6c8c'; // Color de texto por defecto (azul tenue)
+        Chart.defaults.scale.grid.color = '#f1f5f9'; // Color de las líneas de cuadrícula muy suave
+
+        const chart = new Chart(ctx, {
+            type: 'bar',
+            data: { 
+                labels: [], 
+                datasets: [{ 
+                    data: [], 
+                    backgroundColor: colors.all.bg, 
+                    borderColor: colors.all.border, 
+                    borderWidth: 1, 
+                    borderRadius: 4,
+                    barPercentage: 0.7
+                }] 
+            },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false,
+                plugins: { 
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                        titleColor: '#2c3e50',
+                        bodyColor: '#4f6c8c',
+                        borderColor: '#e2e8f0',
+                        borderWidth: 1,
+                        padding: 10,
+                        displayColors: false
+                    }
+                },
+                scales: {
+                    y: { 
+                        beginAtZero: true,
+                        ticks: { font: { size: 11 } }
+                    },
+                    x: { 
+                        grid: { display: false }, 
+                        ticks: { font: { size: 11 }, maxRotation: 45, minRotation: 45 } 
+                    }
+                },
+                animation: { duration: 500, easing: 'easeOutQuart' }
+            }
+        });
+
+        function setLang(lang) {
+            currentLang = lang;
+            
+            // Resetear estilos de botones a estado inactivo (pastel grisáceo sutil)
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.className = "filter-btn px-6 py-2 rounded-full text-sm font-medium transition-all duration-300 text-app-text hover:bg-white/50";
+            });
+            
+            // Aplicar estilo activo sutil según el lenguaje
+            const activeBtn = document.getElementById(`btn-${lang}`);
+            if(lang === 'all') activeBtn.className = "filter-btn px-6 py-2 rounded-full text-sm font-semibold transition-all duration-300 bg-white text-app-title shadow-sm border border-app-border";
+            if(lang === 'python') activeBtn.className = "filter-btn px-6 py-2 rounded-full text-sm font-semibold transition-all duration-300 bg-pastel-yellow/50 text-yellow-900 shadow-sm border border-yellow-200";
+            if(lang === 'java') activeBtn.className = "filter-btn px-6 py-2 rounded-full text-sm font-semibold transition-all duration-300 bg-pastel-red/40 text-red-950 shadow-sm border border-red-200";
+
+            updateChart();
+        }
+
+        function updateChart() {
+            const n = parseInt(topNInput.value) || 15;
+            const dataToRender = fullData[currentLang] ? fullData[currentLang].slice(0, n) : [];
+            
+            chart.data.labels = dataToRender.map(d => d.word);
+            chart.data.datasets[0].data = dataToRender.map(d => d.count);
+            chart.data.datasets[0].backgroundColor = colors[currentLang].bg;
+            chart.data.datasets[0].borderColor = colors[currentLang].border;
+            chart.update();
+        }
+
+        topNInput.addEventListener('change', updateChart);
+
+        // Inicializar estado de botones
+        setLang('all');
+
+        const eventSource = new EventSource('/stream');
+        eventSource.onmessage = function(event) {
+            fullData = JSON.parse(event.data);
+            
+            // Actualizar datos del gráfico
+            updateChart();
+
+            // Actualizar Tarjetas KPI con formato de número local
+            document.getElementById('kpi-repos').textContent = fullData.stats.reposProcessed.toLocaleString();
+            document.getElementById('kpi-files').textContent = fullData.stats.filesProcessed.toLocaleString();
+            document.getElementById('kpi-words').textContent = fullData.stats.totalWords.toLocaleString();
+        };
+
+        eventSource.onerror = () => {
+            document.getElementById('status-text').textContent = 'Conexión interrumpida';
+            document.getElementById('status-text').classList.add('text-red-500');
+            document.getElementById('status-dot').classList.remove('bg-pastel-green', 'animate-pulse');
+            document.getElementById('status-dot').classList.add('bg-red-400');
+        };
+    </script>
+</body>
+</html>
