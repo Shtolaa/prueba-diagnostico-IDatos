@@ -58,7 +58,10 @@ function tailFile() {
             rl.on('close', () => { currentSize = stats.size; });
         } else if (stats.size < currentSize) {
             currentSize = 0;
-            wordFreq.all.clear(); wordFreq.python.clear(); wordFreq.java.clear();
+            wordFreq.all.clear(); 
+            wordFreq.python.clear(); 
+            wordFreq.java.clear();
+            stats = { totalWords: 0, reposProcessed: 0, filesProcessed: 0 };
         }
     } catch (err) {}
 }

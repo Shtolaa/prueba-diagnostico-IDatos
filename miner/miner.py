@@ -107,6 +107,7 @@ async def process_repo(session, repo, semaphore):
 
 async def main():
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
+    open(DATA_FILE, 'w').close()
     semaphore = asyncio.Semaphore(CONCURRENT_REQUESTS)
     
     connector = aiohttp.TCPConnector(limit=CONCURRENT_REQUESTS)
